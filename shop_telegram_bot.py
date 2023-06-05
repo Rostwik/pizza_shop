@@ -33,7 +33,7 @@ def start(bot, update, client_id, client_secret):
     keyboard = [[InlineKeyboardButton(
         product['attributes']['name'],
         callback_data=product['id']
-    ) for product in products]]
+    )] for product in products]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -52,9 +52,8 @@ def handle_menu(bot, update, client_id, client_secret):
     keyboard = [[InlineKeyboardButton(
         product['attributes']['name'],
         callback_data=product['id']
-    ) for product in products],
-        [InlineKeyboardButton('Корзина', callback_data='Корзина')],
-    ]
+    )] for product in products]
+    keyboard.append([InlineKeyboardButton('Корзина', callback_data='Корзина')])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -96,26 +95,23 @@ def handle_description(bot, update, client_id, client_secret):
         moltin_token = get_moltin_token(client_id, client_secret)
 
         product = get_product(moltin_token, product_id)
-        stock = get_stock(moltin_token, product_id)
         price = get_price(moltin_token, product_id)
         image_link = get_product_image(moltin_token, product_id)
 
         keyboard = [
-            [InlineKeyboardButton('1 kg', callback_data=f'1 kg {product_id}'),
-             InlineKeyboardButton('5 kg', callback_data=f'5 kg {product_id}'),
-             InlineKeyboardButton('10 kg', callback_data=f'10 kg {product_id}')],
+            [InlineKeyboardButton('Добавить в корзину', callback_data=f'{product_id}')],
             [InlineKeyboardButton('Назад', callback_data='Назад')],
             [InlineKeyboardButton('Корзина', callback_data='Корзина')],
         ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        text = f'''
-                   {product["attributes"]["name"]}
-                   {price["USD"]["amount"]} USD per kg
-                   {stock} on stock
-                   {product["attributes"]["description"]}
-                   '''
+        text = f'''\
+            {product["attributes"]["name"]}
+            {price["RUB"]["amount"]} руб.
+            {product["attributes"]["description"]}
+        '''
+
 
         bot.send_photo(
             chat_id=query.message.chat_id,
