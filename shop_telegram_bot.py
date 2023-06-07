@@ -11,6 +11,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Filters, Updater
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
+from fetch_coordinates import fetch_coordinates
 from logger_handler import TelegramLogsHandler
 from dotenv import load_dotenv
 
@@ -38,11 +39,34 @@ def start(bot, update, client_id, client_secret):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     update.message.reply_text(
-        f'Доброго денечка, {update.message.chat.username} ! \n Это рыбный магазин.',
+        f'Доброго денечка, {update.message.chat.username} ! \n Не желаете пиццы?',
         reply_markup=reply_markup,
     )
 
     return 'HANDLE_DESCRIPTION'
+
+
+def handle_waiting(bot, update, api_token):
+    if update.message.text:
+        try:
+            lon, lat = fetch_coordinates(api_token, update.message.text)
+        except IndexError:
+            bot.send_message(
+                chat_id=update.message.chat_id,
+                text='Прошу прощения, я не смог определить Ваме местоположение. Попробуйте еще раз.'
+            )
+            return 'HANDLE_LOCATION'
+
+    else:
+        lat = update.message.location.latitude
+        lon = update.message.location.longitude
+
+    bot.send_message(
+        chat_id=update.message.chat_id,
+        text=f'Ваши координаты: {lat}, {lon}'
+    )
+
+    return 'HANDLE_LOCATION'
 
 
 def handle_menu(bot, update, client_id, client_secret):
@@ -73,10 +97,10 @@ def handle_description(bot, update, client_id, client_secret):
     moltin_token = get_moltin_token(client_id, client_secret)
     chat_id = query.message.chat.id
 
-    if 'kg' in query.data:
-        amount, _, product_id = query.data.split()
+    if 'Положить' in query.data:
+        _, product_id = query.data.split()
 
-        add_product_to_cart(moltin_token, product_id, int(amount), chat_id)
+        add_product_to_cart(moltin_token, product_id, 1, chat_id)
 
         return 'HANDLE_DESCRIPTION'
 
@@ -99,19 +123,18 @@ def handle_description(bot, update, client_id, client_secret):
         image_link = get_product_image(moltin_token, product_id)
 
         keyboard = [
-            [InlineKeyboardButton('Добавить в корзину', callback_data=f'{product_id}')],
+            [InlineKeyboardButton('Положить в корзину', callback_data=f'Положить {product_id}')],
             [InlineKeyboardButton('Назад', callback_data='Назад')],
             [InlineKeyboardButton('Корзина', callback_data='Корзина')],
         ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        text = f'''\
-            {product["attributes"]["name"]}
-            {price["RUB"]["amount"]} руб.
-            {product["attributes"]["description"]}
-        '''
-
+        text = (
+            f'{product["attributes"]["name"]}\n'
+            f'{price["RUB"]["amount"]} руб.\n'
+            f'{product["attributes"]["description"]}'
+        )
 
         bot.send_photo(
             chat_id=query.message.chat_id,
@@ -141,9 +164,9 @@ def handle_cart(bot, update, client_id, client_secret):
     if query.data == 'Оплатить':
         bot.send_message(
             chat_id=update.callback_query.message.chat_id,
-            text='Для согласовния оплаты, пожалуйста, укажите Ваш email'
+            text='Укажите, пожалуйста, Ваш адрес (пришлите геолокацию, или напишите текстом)'
         )
-        return 'WAITING_EMAIL'
+        return 'WAITING_PAYMENT'
 
     cart, products_sum = get_cart_items(moltin_token, chat_id)
 
@@ -219,7 +242,7 @@ def handle_email(bot, update, client_id, client_secret):
     return 'WAITING_EMAIL'
 
 
-def handle_users_reply(bot, update, client_id, client_secret):
+def handle_users_reply(bot, update, client_id='', client_secret='', yandex_api_token=''):
     db = get_database_connection()
 
     if update.message:
@@ -267,6 +290,10 @@ def handle_users_reply(bot, update, client_id, client_secret):
             client_id=client_id,
             client_secret=client_secret
         ),
+        'WAITING_PAYMENT': partial(
+            handle_waiting,
+            api_token=yandex_api_token
+        ),
 
     }
     state_handler = states_functions[user_state]
@@ -293,6 +320,7 @@ if __name__ == '__main__':
     telegram_admin_chat_id = os.getenv('TELEGRAM_CHAT_ID')
     client_id = os.getenv('MOLTIN_CLIENT_KEY')
     client_secret = os.getenv('SECRET_KEY')
+    yandex_api_token = os.getenv('YANDEX_API')
 
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
@@ -303,6 +331,9 @@ if __name__ == '__main__':
 
     updater = Updater(telegram_api_token)
     dispatcher = updater.dispatcher
+    dispatcher.add_handler(MessageHandler(
+        Filters.location,
+        partial(handle_users_reply, yandex_api_token=yandex_api_token)))
     dispatcher.add_handler(
         CallbackQueryHandler(partial(handle_users_reply, client_id=client_id, client_secret=client_secret)))
     dispatcher.add_handler(
