@@ -12,7 +12,9 @@ def get_entries(moltin_access_token, flow):
     }
     url = f'https://api.moltin.com/v2/flows/{flow}/entries'
     response = requests.get(url, headers=headers)
-    print(response.json()['data'])
+    response.raise_for_status()
+
+    return response.json()['data']
 
 
 def create_shop_address(moltin_access_token, flow, address, alias, longitude, latitude):
@@ -31,6 +33,7 @@ def create_shop_address(moltin_access_token, flow, address, alias, longitude, la
     }
     url = f'https://api.moltin.com/v2/flows/{flow}/entries'
     requests.post(url, json=payload, headers=headers)
+    response.raise_for_status()
 
 
 def create_flow(moltin_access_token):

@@ -1,6 +1,8 @@
 import requests
 from geopy import distance
 
+from moltin import get_entries
+
 
 def fetch_coordinates(apikey, address):
     payload = {
@@ -21,6 +23,16 @@ def fetch_coordinates(apikey, address):
     return lon, lat
 
 
+def get_nearest_pizzeria(lon, lat, moltin_token):
+    pizzerias = get_entries(moltin_token, 'Pizzeria')
+    for pizzeria in pizzerias:
+        pizzeria_coordinate = (pizzeria['Latitude'], pizzeria['Longitude'])
+        pizzeria_distance = distance.distance(pizzeria_coordinate, (lat, lon)).km
+        pizzeria['distance'] = pizzeria_distance
+
+    nearest_pizzeria = min(pizzerias, key=get_distance)
+    return nearest_pizzeria
 
 
-
+def get_distance(pizzerias):
+    return pizzerias['distance']

@@ -11,7 +11,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Filters, Updater
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
-from geolocation_tools import fetch_coordinates
+from geolocation_tools import fetch_coordinates, get_nearest_pizzeria
 from logger_handler import TelegramLogsHandler
 from dotenv import load_dotenv
 
@@ -47,6 +47,8 @@ def start(bot, update, client_id, client_secret, yandex_api_token):
 
 
 def handle_waiting(bot, update, client_id, client_secret, yandex_api_token):
+    moltin_token = get_moltin_token(client_id, client_secret)
+
     if update.message.text:
         try:
             lon, lat = fetch_coordinates(yandex_api_token, update.message.text)
@@ -55,7 +57,7 @@ def handle_waiting(bot, update, client_id, client_secret, yandex_api_token):
                 chat_id=update.message.chat_id,
                 text='Прошу прощения, я не смог определить Ваме местоположение. Попробуйте еще раз.'
             )
-            return 'HANDLE_LOCATION'
+            return 'WAITING_PAYMENT'
 
     else:
         lat = update.message.location.latitude
@@ -66,9 +68,24 @@ def handle_waiting(bot, update, client_id, client_secret, yandex_api_token):
         text=f'Ваши координаты: {lat}, {lon}'
     )
 
+    nearest_pizzeria = get_nearest_pizzeria(lon, lat, moltin_token)
+    distance = nearest_pizzeria['distance']
 
+    if 20 >= int(distance) > 5:
+        text = f'До ближайшей пиццы {distance} км, доставка будет стоить 300 руб.'
+    elif 5 >= int(distance) > 0.5:
+        text = f'До ближайшей пиццы {distance} км, доставка будет стоить 100 руб.'
+    elif int(distance) <= 0.5:
+        text = f'До ближайшей пиццы {distance} км, доставка для Вас сегодня бесплатно!'
+    else:
+        text = f'К сожалению, Вы находитесь вне зоны нашей доставки. ({distance} км).'
 
-    return 'HANDLE_LOCATION'
+    bot.send_message(
+        chat_id=update.message.chat_id,
+        text=text
+    )
+
+    return 'WAITING_PAYMENT'
 
 
 def handle_menu(bot, update, client_id, client_secret, yandex_api_token):
