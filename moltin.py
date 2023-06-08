@@ -5,6 +5,16 @@ import requests
 token_lifetime, access_token = None, None
 
 
+def get_entries(moltin_access_token, flow):
+    headers = {
+        'Authorization': f'Bearer {moltin_access_token}',
+        'Content-Type': 'application/json'
+    }
+    url = f'https://api.moltin.com/v2/flows/{flow}/entries'
+    response = requests.get(url, headers=headers)
+    print(response.json()['data'])
+
+
 def create_shop_address(moltin_access_token, flow, address, alias, longitude, latitude):
     headers = {
         'Authorization': f'Bearer {moltin_access_token}',

@@ -11,11 +11,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Filters, Updater
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
-from fetch_coordinates import fetch_coordinates
+from geolocation_tools import fetch_coordinates
 from logger_handler import TelegramLogsHandler
 from dotenv import load_dotenv
 
-from moltin import get_moltin_token, get_products, get_product, get_stock, get_price, get_product_image, \
+from moltin import get_moltin_token, get_products, get_product, get_price, get_product_image, \
     add_product_to_cart, get_cart_items, delete_cart_item, create_and_check_customer
 
 logger = logging.getLogger('shop_tg_bot')
@@ -27,7 +27,7 @@ def error_handler(bot, update, error):
     logger.error(f'Телеграм бот упал с ошибкой: {error}', exc_info=True)
 
 
-def start(bot, update, client_id, client_secret):
+def start(bot, update, client_id, client_secret, yandex_api_token):
     moltin_token = get_moltin_token(client_id, client_secret)
     products = get_products(moltin_token)
 
@@ -46,10 +46,10 @@ def start(bot, update, client_id, client_secret):
     return 'HANDLE_DESCRIPTION'
 
 
-def handle_waiting(bot, update, api_token):
+def handle_waiting(bot, update, client_id, client_secret, yandex_api_token):
     if update.message.text:
         try:
-            lon, lat = fetch_coordinates(api_token, update.message.text)
+            lon, lat = fetch_coordinates(yandex_api_token, update.message.text)
         except IndexError:
             bot.send_message(
                 chat_id=update.message.chat_id,
@@ -66,10 +66,12 @@ def handle_waiting(bot, update, api_token):
         text=f'Ваши координаты: {lat}, {lon}'
     )
 
+
+
     return 'HANDLE_LOCATION'
 
 
-def handle_menu(bot, update, client_id, client_secret):
+def handle_menu(bot, update, client_id, client_secret, yandex_api_token):
     moltin_token = get_moltin_token(client_id, client_secret)
     products = get_products(moltin_token)
 
@@ -92,7 +94,7 @@ def handle_menu(bot, update, client_id, client_secret):
     return 'HANDLE_DESCRIPTION'
 
 
-def handle_description(bot, update, client_id, client_secret):
+def handle_description(bot, update, client_id, client_secret, yandex_api_token):
     query = update.callback_query
     moltin_token = get_moltin_token(client_id, client_secret)
     chat_id = query.message.chat.id
@@ -105,12 +107,12 @@ def handle_description(bot, update, client_id, client_secret):
         return 'HANDLE_DESCRIPTION'
 
     if query.data == 'Назад':
-        handle_menu(bot, update, client_id, client_secret)
+        handle_menu(bot, update, client_id, client_secret, yandex_api_token)
 
         return 'HANDLE_DESCRIPTION'
 
     if query.data == 'Корзина':
-        handle_cart(bot, update, client_id, client_secret)
+        handle_cart(bot, update, client_id, client_secret, yandex_api_token)
 
         return 'HANDLE_CART'
 
@@ -147,7 +149,7 @@ def handle_description(bot, update, client_id, client_secret):
     return 'HANDLE_DESCRIPTION'
 
 
-def handle_cart(bot, update, client_id, client_secret):
+def handle_cart(bot, update, client_id, client_secret, yandex_api_token):
     query = update.callback_query
     moltin_token = get_moltin_token(client_id, client_secret)
     chat_id = query.message.chat.id
@@ -203,7 +205,7 @@ def handle_cart(bot, update, client_id, client_secret):
     return 'HANDLE_CART'
 
 
-def handle_email(bot, update, client_id, client_secret):
+def handle_email(bot, update, client_id, client_secret, yandex_api_token):
     query = update.callback_query
     keyboard = []
 
@@ -242,7 +244,7 @@ def handle_email(bot, update, client_id, client_secret):
     return 'WAITING_EMAIL'
 
 
-def handle_users_reply(bot, update, client_id='', client_secret='', yandex_api_token=''):
+def handle_users_reply(bot, update, client_id, client_secret, yandex_api_token):
     db = get_database_connection()
 
     if update.message:
@@ -268,31 +270,38 @@ def handle_users_reply(bot, update, client_id='', client_secret='', yandex_api_t
         'START': partial(
             start,
             client_id=client_id,
-            client_secret=client_secret
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
         ),
         'HANDLE_MENU': partial(
             handle_menu,
             client_id=client_id,
-            client_secret=client_secret
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
         ),
         'HANDLE_DESCRIPTION': partial(
             handle_description,
             client_id=client_id,
-            client_secret=client_secret
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
         ),
         'HANDLE_CART': partial(
             handle_cart,
             client_id=client_id,
-            client_secret=client_secret
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
         ),
         'WAITING_EMAIL': partial(
             handle_email,
             client_id=client_id,
-            client_secret=client_secret
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
         ),
         'WAITING_PAYMENT': partial(
             handle_waiting,
-            api_token=yandex_api_token
+            client_id=client_id,
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
         ),
 
     }
@@ -333,13 +342,33 @@ if __name__ == '__main__':
     dispatcher = updater.dispatcher
     dispatcher.add_handler(MessageHandler(
         Filters.location,
-        partial(handle_users_reply, yandex_api_token=yandex_api_token)))
+        partial(
+            handle_users_reply,
+            client_id=client_id,
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
+        )))
     dispatcher.add_handler(
-        CallbackQueryHandler(partial(handle_users_reply, client_id=client_id, client_secret=client_secret)))
+        CallbackQueryHandler(partial(
+            handle_users_reply,
+            client_id=client_id,
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
+        )))
     dispatcher.add_handler(
-        MessageHandler(Filters.text, partial(handle_users_reply, client_id=client_id, client_secret=client_secret)))
+        MessageHandler(Filters.text, partial(
+            handle_users_reply,
+            client_id=client_id,
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
+        )))
     dispatcher.add_handler(
-        CommandHandler('start', partial(handle_users_reply, client_id=client_id, client_secret=client_secret)))
+        CommandHandler('start', partial(
+            handle_users_reply,
+            client_id=client_id,
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token
+        )))
     dispatcher.add_error_handler(error_handler)
     updater.start_polling()
 
