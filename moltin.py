@@ -17,6 +17,39 @@ def get_entries(moltin_access_token, flow):
     return response.json()['data']
 
 
+def get_customer_address(moltin_access_token, flow, id):
+    headers = {
+        'Authorization': f'Bearer {moltin_access_token}',
+        'Content-Type': 'application/json'
+    }
+    url = f'https://api.moltin.com/v2/flows/{flow}/entries/{id}'
+
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    return response.json()['data']
+
+
+def create_customer_address(moltin_access_token, flow, longitude, latitude, telegram_chat_id):
+    headers = {
+        'Authorization': f'Bearer {moltin_access_token}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'data': {
+            'type': 'entry',
+            'customer_telegram_id': telegram_chat_id,
+            'lon': longitude,
+            'lat': latitude,
+        }
+    }
+    url = f'https://api.moltin.com/v2/flows/{flow}/entries'
+    response = requests.post(url, json=payload, headers=headers)
+    response.raise_for_status()
+
+    return response.json()['data']['id']
+
+
 def create_shop_address(moltin_access_token, flow, address, alias, longitude, latitude):
     headers = {
         'Authorization': f'Bearer {moltin_access_token}',
@@ -32,7 +65,7 @@ def create_shop_address(moltin_access_token, flow, address, alias, longitude, la
         }
     }
     url = f'https://api.moltin.com/v2/flows/{flow}/entries'
-    requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers)
     response.raise_for_status()
 
 
