@@ -1,6 +1,5 @@
 import os
 import logging
-import re
 import textwrap
 from functools import partial
 
@@ -8,7 +7,7 @@ import redis
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from telegram.ext import Filters, Updater
+from telegram.ext import Filters, Updater, PreCheckoutQueryHandler
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
 from geolocation_tools import fetch_coordinates, get_nearest_pizzeria
@@ -16,8 +15,9 @@ from logger_handler import TelegramLogsHandler
 from dotenv import load_dotenv
 
 from moltin import get_moltin_token, get_products, get_product, get_price, get_product_image, \
-    add_product_to_cart, get_cart_items, delete_cart_item, create_and_check_customer, create_customer_address, \
+    add_product_to_cart, get_cart_items, delete_cart_item, create_customer_address, \
     get_customer_address, get_entries
+from payment_tools import precheckout_callback, successful_payment_callback, start_without_shipping_callback
 
 logger = logging.getLogger('shop_tg_bot')
 
@@ -37,7 +37,15 @@ def error_handler(bot, update, error):
     logger.error(f'Телеграм бот упал с ошибкой: {error}', exc_info=True)
 
 
-def start(bot, update, client_id, client_secret, yandex_api_token, job_queue):
+def start(bot,
+          update,
+          client_id,
+          client_secret,
+          yandex_api_token,
+          job_queue,
+          payment_token,
+          payload_word
+          ):
     moltin_token = get_moltin_token(client_id, client_secret)
     products = get_products(moltin_token)
 
@@ -56,13 +64,22 @@ def start(bot, update, client_id, client_secret, yandex_api_token, job_queue):
     return 'HANDLE_DESCRIPTION'
 
 
-def handle_waiting(bot, update, client_id, client_secret, yandex_api_token, job_queue):
+def handle_waiting(
+        bot,
+        update,
+        client_id,
+        client_secret,
+        yandex_api_token,
+        job_queue,
+        payment_token,
+        payload_word
+):
     moltin_token = get_moltin_token(client_id, client_secret)
 
     if update.message.text:
         try:
             lon, lat = fetch_coordinates(yandex_api_token, update.message.text)
-        except IndexError:
+        except Exception:
             bot.send_message(
                 chat_id=update.message.chat_id,
                 text='Прошу прощения, я не смог определить Ваше местоположение. Попробуйте еще раз.'
@@ -80,19 +97,39 @@ def handle_waiting(bot, update, client_id, client_secret, yandex_api_token, job_
 
     nearest_pizzeria = get_nearest_pizzeria(lon, lat, moltin_token)
     distance = nearest_pizzeria['distance']
-    # TODO: переписать текстовки и исправить аргументы по всему коду, добавить yandex_api_token
+
     if 20 >= int(distance) > 5:
-        text = f'До ближайшей пиццы {distance} км, доставка будет стоить 300 руб.'
+        text = f'До ближайшей пиццерии {distance} км. от Вас, доставка будет стоить 300 руб. Везем?'
+        shipping_cost = 300
     elif 5 >= int(distance) > 0.5:
-        text = f'До ближайшей пиццы {distance} км, доставка будет стоить 100 руб.'
+        text = f'Похоже придется ехать до Вас на самокате. Доставка будет стоить 100 руб. Доставляем или самовывоз?'
+        shipping_cost = 100
     elif int(distance) <= 0.5:
-        text = f'До ближайшей пиццы {distance} км, доставка для Вас сегодня бесплатно!'
+        meters_distance = distance * 1000
+        text = f'''
+        Может, заберете пиццу из нашей пиццерии неподалеку? Она всего в {meters_distance} метрах
+        от Вас! Вот ее адрес: {nearest_pizzeria["Address"]}. А можем и бесплатно доставить, нам
+        несложно!
+        '''
+        shipping_cost = 0
     else:
-        text = f'К сожалению, Вы находитесь вне зоны нашей доставки. ({distance} км).'
-        handle_menu(bot, update, client_id, client_secret, yandex_api_token)
+        text = f'''К сожалению, Вы находитесь вне зоны нашей доставки.
+                   Ближайшая пиццерия находится на расстоянии
+                   {distance} км. от Вас.
+               '''
         bot.send_message(
             chat_id=update.message.chat_id,
             text=text
+        )
+        handle_menu(
+            bot,
+            update,
+            client_id,
+            client_secret,
+            yandex_api_token,
+            job_queue,
+            payment_token,
+            payload_word
         )
 
         return 'HANDLE_DESCRIPTION'
@@ -101,7 +138,7 @@ def handle_waiting(bot, update, client_id, client_secret, yandex_api_token, job_
 
     keyboard = [
         [InlineKeyboardButton('Самовывоз', callback_data='Самовывоз')],
-        [InlineKeyboardButton('Доставка', callback_data='Доставка')],
+        [InlineKeyboardButton('Доставка', callback_data=f'Доставка {shipping_cost}')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -114,12 +151,12 @@ def handle_waiting(bot, update, client_id, client_secret, yandex_api_token, job_
     return 'WAITING_DELIVERY'
 
 
-def handle_delivery(bot, update, client_id, client_secret, yandex_api_token, job_queue):
+def handle_delivery(bot, update, client_id, client_secret, yandex_api_token, job_queue, payment_token, payload_word):
     query = update.callback_query
     moltin_token = get_moltin_token(client_id, client_secret)
     chat_id = query.message.chat.id
 
-    if query.data == 'Доставка':
+    if 'Доставка' in query.data:
         lon, lat = None, None
         customers_coordinates = get_entries(moltin_token, 'customer_address')
 
@@ -129,18 +166,61 @@ def handle_delivery(bot, update, client_id, client_secret, yandex_api_token, job
                 break
         delivaryman_tg_chat_id = get_nearest_pizzeria(lon, lat, moltin_token)['deliveryman_telegram_id']
         bot.send_location(chat_id=int(delivaryman_tg_chat_id), latitude=lat, longitude=lon)
-
         job_queue.run_once(send_customer_reminder, 3600, context=query.message.chat_id)
 
-        return 'WAITING_DELIVERY'
+        total_amount = 0
+        cart, products_sum = get_cart_items(moltin_token, chat_id)
+        _, shipping_cost = query.data.split()
+        cart_list = 'Ваш заказ:\n'
+        if cart:
+            for item in cart:
+                product_price = item['unit_price']['amount']
+                cart_list += (
+                    f'{item["name"]}\n'
+                    f'{item["description"]}\n'
+                    f'Цена: {product_price} Руб.\n'
+                    f'{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.\n'
+                    f'__________________________________________________________\n'
+                )
+            cart_list += f'\nДоставка: {shipping_cost} Руб.\n'
+            total_amount = products_sum + int(shipping_cost)
+            cart_list += f'\nК оплате: {total_amount} Руб.'
+
+        keyboard = [
+            [InlineKeyboardButton('Оплата', callback_data=f'расплата {total_amount}')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        bot.send_message(
+            chat_id=chat_id,
+            text=cart_list,
+            reply_markup=reply_markup
+        )
+
+        return 'WAITING_TRANSACTION'
 
     if query.data == 'Самовывоз':
-        print('Самовывоз')
+        keyboard = [[InlineKeyboardButton('Меню', callback_data='Назад')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        bot.send_message(
+            chat_id=query.message.chat_id,
+            text='Спасибо за Ваш заказ! Ждем Вас снова! Всего доброго!',
+            reply_markup=reply_markup
+        )
 
-        return 'WAITING_DELIVERY'
+        return 'HANDLE_DESCRIPTION'
 
 
-def handle_menu(bot, update, client_id, client_secret, yandex_api_token, job_queue):
+def handle_payment(bot, update, client_id, client_secret, yandex_api_token, job_queue, payment_token, payload_word):
+    query = update.callback_query
+
+    if 'расплата' in query.data:
+        _, total_amount = query.data.split()
+        start_without_shipping_callback(bot, update, int(total_amount), payment_token, payload_word)
+
+    return 'HANDLE_DESCRIPTION'
+
+
+def handle_menu(bot, update, client_id, client_secret, yandex_api_token, job_queue, payment_token, payload_word):
     moltin_token = get_moltin_token(client_id, client_secret)
     products = get_products(moltin_token)
 
@@ -149,7 +229,6 @@ def handle_menu(bot, update, client_id, client_secret, yandex_api_token, job_que
         callback_data=product['id']
     )] for product in products]
     keyboard.append([InlineKeyboardButton('Корзина', callback_data='Корзина')])
-
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     update.callback_query.message.reply_text(
@@ -163,25 +242,42 @@ def handle_menu(bot, update, client_id, client_secret, yandex_api_token, job_que
     return 'HANDLE_DESCRIPTION'
 
 
-def handle_description(bot, update, client_id, client_secret, yandex_api_token, job_queue):
+def handle_description(bot, update, client_id, client_secret, yandex_api_token, job_queue, payment_token, payload_word):
     query = update.callback_query
     moltin_token = get_moltin_token(client_id, client_secret)
     chat_id = query.message.chat.id
 
     if 'Положить' in query.data:
         _, product_id = query.data.split()
-
         add_product_to_cart(moltin_token, product_id, 1, chat_id)
 
         return 'HANDLE_DESCRIPTION'
 
     if query.data == 'Назад':
-        handle_menu(bot, update, client_id, client_secret, yandex_api_token)
+        handle_menu(
+            bot,
+            update,
+            client_id,
+            client_secret,
+            yandex_api_token,
+            job_queue,
+            payment_token,
+            payload_word
+        )
 
         return 'HANDLE_DESCRIPTION'
 
     if query.data == 'Корзина':
-        handle_cart(bot, update, client_id, client_secret, yandex_api_token)
+        handle_cart(
+            bot,
+            update,
+            client_id,
+            client_secret,
+            yandex_api_token,
+            job_queue,
+            payment_token,
+            payload_word
+        )
 
         return 'HANDLE_CART'
 
@@ -218,7 +314,7 @@ def handle_description(bot, update, client_id, client_secret, yandex_api_token, 
     return 'HANDLE_DESCRIPTION'
 
 
-def handle_cart(bot, update, client_id, client_secret, yandex_api_token, job_queue):
+def handle_cart(bot, update, client_id, client_secret, yandex_api_token, job_queue, payment_token, payload_word):
     query = update.callback_query
     moltin_token = get_moltin_token(client_id, client_secret)
     chat_id = query.message.chat.id
@@ -228,7 +324,16 @@ def handle_cart(bot, update, client_id, client_secret, yandex_api_token, job_que
         delete_cart_item(moltin_token, chat_id, product_id)
 
     if query.data == 'В меню':
-        handle_menu(bot, update, client_id, client_secret)
+        handle_menu(
+            bot,
+            update,
+            client_id,
+            client_secret,
+            yandex_api_token,
+            job_queue,
+            payment_token,
+            payload_word
+        )
 
         return 'HANDLE_DESCRIPTION'
 
@@ -246,74 +351,39 @@ def handle_cart(bot, update, client_id, client_secret, yandex_api_token, job_que
     if cart:
         for item in cart:
             product_price = item['unit_price']['amount']
-            cart_list += textwrap.dedent(
-                f'''
-                {item["name"]}
-                {item["description"]}
-                ${product_price} per kg
-                {item["quantity"]} kg in cart for ${item["value"]['amount']}
-                '''
+            cart_list += (
+                f'{item["name"]}\n'
+                f'{item["description"]}\n'
+                f'Цена: {product_price} Руб.\n'
+                f'{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.\n'
+                f'__________________________________________________________\n'
             )
             keyboard.append([InlineKeyboardButton(f'Убрать из корзины {item["name"]}',
                                                   callback_data=f'Убрать {item["id"]}')])
-        cart_list += f'\nTotal: ${products_sum}'
+        cart_list += f'\nИтого: {products_sum} Руб.'
         keyboard.append([InlineKeyboardButton('Оплатить', callback_data='Оплатить')])
-
     else:
         cart_list = 'Пожалуйста, перейдите в меню и выберите товар.'
 
     keyboard.append([InlineKeyboardButton('В меню', callback_data='В меню')])
-
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     bot.send_message(chat_id=query.message.chat_id, text=cart_list, reply_markup=reply_markup)
-
     bot.delete_message(chat_id=update.callback_query.message.chat.id,
                        message_id=update.callback_query.message.message_id)
 
     return 'HANDLE_CART'
 
 
-def handle_email(bot, update, client_id, client_secret, yandex_api_token, job_queue):
-    query = update.callback_query
-    keyboard = []
-
-    if update.message:
-        name = update.message.chat.username
-        email = update.message.text
-        chat_id = update.message.chat_id
-        email_check = re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$', email)
-        if email_check:
-            moltin_token = get_moltin_token(client_id, client_secret)
-            customer = create_and_check_customer(moltin_token, name, email)
-
-            keyboard = [
-                [InlineKeyboardButton('Верно', callback_data='Верно')],
-                [InlineKeyboardButton('Неверно', callback_data='Неверно')],
-            ]
-
-            text = f'{customer["name"]}, Ваш email {customer["email"]}?'
-        else:
-            text = 'Кажется, Вы ввели неверный email, попробуйте еще раз, пожалуйста'
-
-    if query:
-        if query.data == 'В меню':
-            handle_menu(bot, update, client_id, client_secret)
-            return 'HANDLE_DESCRIPTION'
-        elif query.data == 'Верно':
-            text = f'Спасибо за заказ, мы всегда рады видеть Вас снова!'
-        elif query.data == 'Неверно':
-            text = f'Ничего страшного, просто введите Ваш адрес еще раз.'
-        chat_id = query.message.chat_id
-
-    keyboard.append([InlineKeyboardButton('В меню', callback_data='В меню')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
-
-    return 'WAITING_EMAIL'
-
-
-def handle_users_reply(bot, update, client_id, client_secret, yandex_api_token, job_queue):
+def handle_users_reply(
+        bot,
+        update,
+        client_id,
+        client_secret,
+        yandex_api_token,
+        job_queue,
+        payment_token,
+        payload_word
+):
     db = get_database_connection()
 
     if update.message:
@@ -341,49 +411,63 @@ def handle_users_reply(bot, update, client_id, client_secret, yandex_api_token, 
             client_id=client_id,
             client_secret=client_secret,
             yandex_api_token=yandex_api_token,
-            job_queue=job_queue
+            job_queue=job_queue,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
         'HANDLE_MENU': partial(
             handle_menu,
             client_id=client_id,
             client_secret=client_secret,
             yandex_api_token=yandex_api_token,
-            job_queue=job_queue
+            job_queue=job_queue,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
         'HANDLE_DESCRIPTION': partial(
             handle_description,
             client_id=client_id,
             client_secret=client_secret,
             yandex_api_token=yandex_api_token,
-            job_queue=job_queue
+            job_queue=job_queue,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
         'HANDLE_CART': partial(
             handle_cart,
             client_id=client_id,
             client_secret=client_secret,
             yandex_api_token=yandex_api_token,
-            job_queue=job_queue
-        ),
-        'WAITING_EMAIL': partial(
-            handle_email,
-            client_id=client_id,
-            client_secret=client_secret,
-            yandex_api_token=yandex_api_token,
-            job_queue=job_queue
+            job_queue=job_queue,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
         'WAITING_PAYMENT': partial(
             handle_waiting,
             client_id=client_id,
             client_secret=client_secret,
             yandex_api_token=yandex_api_token,
-            job_queue=job_queue
+            job_queue=job_queue,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
         'WAITING_DELIVERY': partial(
             handle_delivery,
             client_id=client_id,
             client_secret=client_secret,
             yandex_api_token=yandex_api_token,
-            job_queue=job_queue
+            job_queue=job_queue,
+            payment_token=payment_token,
+            payload_word=payload_word
+        ),
+        'WAITING_TRANSACTION': partial(
+            handle_payment,
+            client_id=client_id,
+            client_secret=client_secret,
+            yandex_api_token=yandex_api_token,
+            job_queue=job_queue,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
 
     }
@@ -412,6 +496,8 @@ if __name__ == '__main__':
     client_id = os.getenv('MOLTIN_CLIENT_KEY')
     client_secret = os.getenv('SECRET_KEY')
     yandex_api_token = os.getenv('YANDEX_API')
+    payment_token = os.getenv('TRANZZO_TOKEN')
+    payload_word = os.getenv('SECRET_WORD')
 
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
@@ -428,27 +514,35 @@ if __name__ == '__main__':
             handle_users_reply,
             client_id=client_id,
             client_secret=client_secret,
-            yandex_api_token=yandex_api_token
+            yandex_api_token=yandex_api_token,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
         pass_job_queue=True
-    ))
+    )
+    )
     dispatcher.add_handler(
         CallbackQueryHandler(partial(
             handle_users_reply,
             client_id=client_id,
             client_secret=client_secret,
-            yandex_api_token=yandex_api_token
+            yandex_api_token=yandex_api_token,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
-        pass_job_queue=True
-        ))
+            pass_job_queue=True
+        )
+    )
     dispatcher.add_handler(
         MessageHandler(Filters.text, partial(
             handle_users_reply,
             client_id=client_id,
             client_secret=client_secret,
-            yandex_api_token=yandex_api_token
+            yandex_api_token=yandex_api_token,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
-        pass_job_queue=True
+                       pass_job_queue=True
                        )
     )
     dispatcher.add_handler(
@@ -456,11 +550,15 @@ if __name__ == '__main__':
             handle_users_reply,
             client_id=client_id,
             client_secret=client_secret,
-            yandex_api_token=yandex_api_token
+            yandex_api_token=yandex_api_token,
+            payment_token=payment_token,
+            payload_word=payload_word
         ),
-        pass_job_queue=True
+                       pass_job_queue=True
                        )
     )
+    dispatcher.add_handler(PreCheckoutQueryHandler(partial(precheckout_callback, payload_word=payload_word)))
+    dispatcher.add_handler(MessageHandler(Filters.successful_payment, successful_payment_callback))
     dispatcher.add_error_handler(error_handler)
     updater.start_polling()
 
