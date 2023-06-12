@@ -40,7 +40,7 @@ To get started go to terminal(mac os) or CMD (Windows)
 - clone github repository or download the code
 
 ```bash
-$git clone https://github.com/Rostwik/fish_shop.git
+$git clone https://github.com/Rostwik/pizza_shop.git
 ```
 
 - install packages
