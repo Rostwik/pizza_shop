@@ -85,6 +85,7 @@ def create_flow(moltin_access_token):
         }
     }
     response = requests.post(url, json=payload, headers=headers)
+    response.raise_for_status()
     flow_id = response.json()['data']['id']
 
     url = 'https://api.moltin.com/v2/fields'
@@ -110,7 +111,7 @@ def create_flow(moltin_access_token):
             }
         }
         requests.post(url, json=payload, headers=headers)
-
+        response.raise_for_status()
 
 def create_product(moltin_access_token, img_link, sku, name, description):
     url = 'https://api.moltin.com/pcm/products'

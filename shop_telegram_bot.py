@@ -175,13 +175,13 @@ def handle_delivery(bot, update, client_id, client_secret, yandex_api_token, job
         if cart:
             for item in cart:
                 product_price = item['unit_price']['amount']
-                cart_list += (
-                    f'{item["name"]}\n'
-                    f'{item["description"]}\n'
-                    f'Цена: {product_price} Руб.\n'
-                    f'{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.\n'
-                    f'__________________________________________________________\n'
-                )
+                cart_list += f'''
+                         \n{item["name"]}
+                         \n{item["description"]}
+                         \nЦена: {product_price} Руб.
+                         \n{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.
+                         __________________________________________________________
+                         '''
             cart_list += f'\nДоставка: {shipping_cost} Руб.\n'
             total_amount = products_sum + int(shipping_cost)
             cart_list += f'\nК оплате: {total_amount} Руб.'
@@ -350,19 +350,14 @@ def handle_cart(bot, update, client_id, client_secret, yandex_api_token, job_que
     keyboard = []
     if cart:
         for item in cart:
-            product_price = textwrap.dedent(item['unit_price']['amount'])
-            name = textwrap.dedent(item['name'])
-            description = textwrap.dedent(item['description'])
-            quantity = textwrap.dedent(item['quantity'])
-            amount = textwrap.dedent(item['value']['amount'])
-
+            product_price = item['unit_price']['amount']
             cart_list += f'''
-                {name}
-                {description}
-                Цена: {product_price} Руб.
-                {quantity} шт. в корзине - {amount} Руб.
-                __________________________________________________________
-            '''
+                         \n{item["name"]}
+                         \n{item["description"]}
+                         \nЦена: {product_price} Руб.
+                         \n{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.
+                         __________________________________________________________
+                         '''
             keyboard.append([InlineKeyboardButton(f'Убрать из корзины {item["name"]}',
                                                   callback_data=f'Убрать {item["id"]}')])
         cart_list += f'\nИтого: {products_sum} Руб.'
@@ -513,55 +508,62 @@ if __name__ == '__main__':
 
     updater = Updater(telegram_api_token)
     dispatcher = updater.dispatcher
-    dispatcher.add_handler(MessageHandler(
-        Filters.location,
-        partial(
-            handle_users_reply,
-            client_id=client_id,
-            client_secret=client_secret,
-            yandex_api_token=yandex_api_token,
-            payment_token=payment_token,
-            payload_word=payload_word
-        ),
-        pass_job_queue=True
-    )
-    )
     dispatcher.add_handler(
-        CallbackQueryHandler(partial(
-            handle_users_reply,
-            client_id=client_id,
-            client_secret=client_secret,
-            yandex_api_token=yandex_api_token,
-            payment_token=payment_token,
-            payload_word=payload_word
-        ),
+        MessageHandler(
+            Filters.location,
+            partial(
+                handle_users_reply,
+                client_id=client_id,
+                client_secret=client_secret,
+                yandex_api_token=yandex_api_token,
+                payment_token=payment_token,
+                payload_word=payload_word
+            ),
             pass_job_queue=True
         )
     )
     dispatcher.add_handler(
-        MessageHandler(Filters.text, partial(
-            handle_users_reply,
-            client_id=client_id,
-            client_secret=client_secret,
-            yandex_api_token=yandex_api_token,
-            payment_token=payment_token,
-            payload_word=payload_word
-        ),
-                       pass_job_queue=True
-                       )
+        CallbackQueryHandler(
+            partial(
+                handle_users_reply,
+                client_id=client_id,
+                client_secret=client_secret,
+                yandex_api_token=yandex_api_token,
+                payment_token=payment_token,
+                payload_word=payload_word
+            ),
+            pass_job_queue=True
+        )
     )
     dispatcher.add_handler(
-        CommandHandler('start', partial(
-            handle_users_reply,
-            client_id=client_id,
-            client_secret=client_secret,
-            yandex_api_token=yandex_api_token,
-            payment_token=payment_token,
-            payload_word=payload_word
-        ),
-                       pass_job_queue=True
-                       )
+        MessageHandler(
+            Filters.text,
+            partial(
+                handle_users_reply,
+                client_id=client_id,
+                client_secret=client_secret,
+                yandex_api_token=yandex_api_token,
+                payment_token=payment_token,
+                payload_word=payload_word
+            ),
+            pass_job_queue=True
+        )
     )
+    dispatcher.add_handler(
+        CommandHandler(
+            'start',
+            partial(
+                handle_users_reply,
+                client_id=client_id,
+                client_secret=client_secret,
+                yandex_api_token=yandex_api_token,
+                payment_token=payment_token,
+                payload_word=payload_word
+            ),
+            pass_job_queue=True
+        )
+    )
+
     dispatcher.add_handler(PreCheckoutQueryHandler(partial(precheckout_callback, payload_word=payload_word)))
     dispatcher.add_handler(MessageHandler(Filters.successful_payment, successful_payment_callback))
     dispatcher.add_error_handler(error_handler)
