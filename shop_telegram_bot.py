@@ -350,14 +350,19 @@ def handle_cart(bot, update, client_id, client_secret, yandex_api_token, job_que
     keyboard = []
     if cart:
         for item in cart:
-            product_price = item['unit_price']['amount']
-            cart_list += (
-                f'{item["name"]}\n'
-                f'{item["description"]}\n'
-                f'Цена: {product_price} Руб.\n'
-                f'{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.\n'
-                f'__________________________________________________________\n'
-            )
+            product_price = textwrap.dedent(item['unit_price']['amount'])
+            name = textwrap.dedent(item['name'])
+            description = textwrap.dedent(item['description'])
+            quantity = textwrap.dedent(item['quantity'])
+            amount = textwrap.dedent(item['value']['amount'])
+
+            cart_list += f'''
+                {name}
+                {description}
+                Цена: {product_price} Руб.
+                {quantity} шт. в корзине - {amount} Руб.
+                __________________________________________________________
+            '''
             keyboard.append([InlineKeyboardButton(f'Убрать из корзины {item["name"]}',
                                                   callback_data=f'Убрать {item["id"]}')])
         cart_list += f'\nИтого: {products_sum} Руб.'
