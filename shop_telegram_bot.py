@@ -176,12 +176,13 @@ def handle_delivery(bot, update, client_id, client_secret, yandex_api_token, job
             for item in cart:
                 product_price = item['unit_price']['amount']
                 cart_list += f'''
-                         \n{item["name"]}
-                         \n{item["description"]}
-                         \nЦена: {product_price} Руб.
-                         \n{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.
+                         {item["name"]}
+                         {item["description"]}
+                         Цена: {product_price} Руб.
+                         {item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.
                          __________________________________________________________
                          '''
+            cart_list = "\n".join([line.lstrip() for line in cart_list.split("\n")])
             cart_list += f'\nДоставка: {shipping_cost} Руб.\n'
             total_amount = products_sum + int(shipping_cost)
             cart_list += f'\nК оплате: {total_amount} Руб.'
@@ -352,14 +353,15 @@ def handle_cart(bot, update, client_id, client_secret, yandex_api_token, job_que
         for item in cart:
             product_price = item['unit_price']['amount']
             cart_list += f'''
-                         \n{item["name"]}
-                         \n{item["description"]}
-                         \nЦена: {product_price} Руб.
-                         \n{item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.
+                         {item["name"]}
+                         {item["description"]}
+                         Цена: {product_price} Руб.
+                         {item["quantity"]} шт. в корзине - {item["value"]["amount"]} Руб.
                          __________________________________________________________
                          '''
             keyboard.append([InlineKeyboardButton(f'Убрать из корзины {item["name"]}',
                                                   callback_data=f'Убрать {item["id"]}')])
+        cart_list = "\n".join([line.lstrip() for line in cart_list.split("\n")])
         cart_list += f'\nИтого: {products_sum} Руб.'
         keyboard.append([InlineKeyboardButton('Оплатить', callback_data='Оплатить')])
     else:
