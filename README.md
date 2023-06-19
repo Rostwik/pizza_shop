@@ -59,8 +59,6 @@ You can see working chatbots here:
 
 - [tg_bot](https://t.me/Space_photography_bot)
 
-![illustration](files/vk_quiz.gif)
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
