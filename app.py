@@ -5,13 +5,15 @@ import requests
 from flask import Flask, request
 from dotenv import load_dotenv
 
-from moltin import get_moltin_token, get_products, get_product_image, get_price
+from moltin import get_moltin_token, get_products, get_product_image, get_price, get_categories, \
+    get_products_by_category_id
 
 app = Flask(__name__)
 load_dotenv()
 FACEBOOK_TOKEN = os.getenv('FACEBOOK_TOKEN')
 client_id = os.getenv('MOLTIN_CLIENT_KEY')
 client_secret = os.getenv('SECRET_KEY')
+main_shop_img = os.getenv('MAIN_IMG')
 
 
 @app.route('/', methods=['GET'])
@@ -40,10 +42,23 @@ def webhook():
                     sender_id = messaging_event["sender"]["id"]
                     recipient_id = messaging_event["recipient"]["id"]
                     moltin_token = get_moltin_token(client_id, client_secret)
-                    products = get_products(moltin_token)
-                    menu_items = []
+                    categories = get_categories(moltin_token)
+                    products = get_products_by_category_id(moltin_token, categories['front_main'])
+                    menu_items = [
+                        {'title': "Меню",
+                         'subtitle': "На любой вкус!",
+                         'image_url': main_shop_img,
+                         'buttons': [{'type': 'postback', 'title': 'Корзина',
+                                      'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
+                                     {'type': 'postback', 'title': 'Акции',
+                                      'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
+                                     {'type': 'postback', 'title': 'Сделать заказ',
+                                      'payload': 'DEVELOPER_DEFINED_PAYLOAD'}
+                                     ]
+                         }
+                    ]
                     for product in products:
-                        price = get_price(moltin_token, product['id'])['RUB']['amount']
+                        price = product['attributes']['price']['RUB']['amount']
                         menu_items.append(
                             {'title': f"{product['attributes']['name']} {price}р.",
                              'image_url': get_product_image(moltin_token, product['id']),
@@ -58,7 +73,7 @@ def webhook():
                             "type": "template",
                             "payload": {
                                 "template_type": "generic",
-                                "elements": menu_items[:5]
+                                "elements": menu_items
 
                             }
                         }
