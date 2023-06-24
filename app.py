@@ -14,6 +14,7 @@ FACEBOOK_TOKEN = os.getenv('FACEBOOK_TOKEN')
 client_id = os.getenv('MOLTIN_CLIENT_KEY')
 client_secret = os.getenv('SECRET_KEY')
 main_shop_img = os.getenv('MAIN_IMG')
+categories_pizzas_img = os.getenv('OTHERS_PIZZAS_IMG')
 
 
 @app.route('/', methods=['GET'])
@@ -67,6 +68,22 @@ def webhook():
                                           'payload': 'DEVELOPER_DEFINED_PAYLOAD'}]
                              }
                         )
+
+                    buttons = [
+                        {
+                            'type': 'postback', 'title': category, 'payload': 'DEVELOPER_DEFINED_PAYLOAD'
+                        }
+                        for category in categories
+                        if category not in ['front_main', 'Pizza', 'Main']
+                    ]
+
+                    menu_items.append(
+                        {'title': "Не нашли нужную пиццу?",
+                         'image_url': categories_pizzas_img,
+                         'subtitle': 'Остальные пиццы можно посмотреть в категориях ниже.',
+                         'buttons': buttons
+                         }
+                    )
 
                     message = {
                         "attachment": {
