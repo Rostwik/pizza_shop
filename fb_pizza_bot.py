@@ -7,7 +7,7 @@ from flask import Flask, request
 from dotenv import load_dotenv
 
 from moltin import get_moltin_token, get_product_image, get_categories, get_products_by_category_id, \
-    add_product_to_cart, get_cart_items
+    add_product_to_cart, get_cart_items, delete_cart_item
 
 app = Flask(__name__)
 load_dotenv()
@@ -58,21 +58,32 @@ def handle_menu(sender_id, message_text, db, user_id):
         }
         send_message(sender_id, message)
 
-    if 'cart' in message_text:
-        cart, products_sum = get_cart_items(moltin_access_token, user_id)
-        pprint(cart)
-        menu_items = [
-            {'title': f"Заказ на сумму {products_sum}",
-             'image_url': cart_img,
-             'buttons': [{'type': 'postback', 'title': 'Самовывоз',
-                          'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
-                         {'type': 'postback', 'title': 'Доставка',
-                          'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
-                         {'type': 'postback', 'title': 'Меню',
-                          'payload': 'menu'}
-                         ]
-             }
-        ]
+    if message_text == 'cart':
+        get_cart_menu(moltin_access_token, sender_id, user_id)
+
+    if 'delete' in message_text:
+        _, cart_product_id = message_text.split()
+        delete_cart_item(moltin_access_token, user_id, cart_product_id)
+        get_cart_menu(moltin_access_token, sender_id, user_id)
+
+    return 'MENU'
+
+
+def get_cart_menu(moltin_access_token, sender_id, user_id):
+    cart, products_sum = get_cart_items(moltin_access_token, user_id)
+    menu_items = [
+        {'title': f"Заказ на сумму {products_sum}",
+         'image_url': cart_img,
+         'buttons': [{'type': 'postback', 'title': 'Самовывоз',
+                      'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
+                     {'type': 'postback', 'title': 'Доставка',
+                      'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
+                     {'type': 'postback', 'title': 'Меню',
+                      'payload': 'menu'}
+                     ]
+         }
+    ]
+    if cart:
         for item in cart:
             menu_items.append(
                 {'title': f"{item['name']}",
@@ -82,24 +93,17 @@ def handle_menu(sender_id, message_text, db, user_id):
                               'payload': f'delete {item["id"]}'}]
                  }
             )
+    message = {
+        "attachment": {
+            "type": "template",
+            "payload": {
+                "template_type": "generic",
+                "elements": menu_items
 
-        message = {
-            "attachment": {
-                "type": "template",
-                "payload": {
-                    "template_type": "generic",
-                    "elements": menu_items
-
-                }
             }
         }
-
-        send_message(sender_id, message)
-
-    if 'delete' in message_text:
-        pass
-
-    return 'MENU'
+    }
+    send_message(sender_id, message)
 
 
 def handle_users_reply(sender_id, message_text):
