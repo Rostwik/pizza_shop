@@ -78,8 +78,11 @@ def webhook():
                 if messaging_event.get("message"):
                     sender_id = messaging_event["sender"]["id"]
                     message_text = messaging_event["message"]["text"]
-
                     handle_users_reply(sender_id, message_text)
+                elif messaging_event.get('postback'):
+                    sender_id = messaging_event['sender']['id']
+                    payload = messaging_event['postback']['payload']
+                    handle_users_reply(sender_id, payload)
     return "ok", 200
 
 
@@ -102,7 +105,11 @@ def send_message(recipient_id, message):
 def send_menu(recipient_id, message_text):
     moltin_token = get_moltin_token(client_id, client_secret)
     categories = get_categories(moltin_token)
-    products = get_products_by_category_id(moltin_token, categories['front_main'])
+    if 'category' in message_text:
+        _, category_name = message_text.split()
+        products = get_products_by_category_id(moltin_token, categories[category_name])
+    else:
+        products = get_products_by_category_id(moltin_token, categories['front_main'])
     menu_items = [
         {'title': "Меню",
          'subtitle': "На любой вкус!",
@@ -129,7 +136,7 @@ def send_menu(recipient_id, message_text):
 
     buttons = [
         {
-            'type': 'postback', 'title': category, 'payload': 'DEVELOPER_DEFINED_PAYLOAD'
+            'type': 'postback', 'title': category, 'payload': f'category {category}'
         }
         for category in categories
         if category not in ['front_main', 'Pizza', 'Main']
