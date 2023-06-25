@@ -50,7 +50,7 @@ $pip install -r requirements.txt
 ```
 - run the program 
 ```bash
-$python shop_telegram_bot.py
+$python tg_pizza_bot.py
 ```
 
 ## Examples

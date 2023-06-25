@@ -15,8 +15,7 @@ from logger_handler import TelegramLogsHandler
 from dotenv import load_dotenv
 
 from moltin import get_moltin_token, get_products, get_product, get_price, get_product_image, \
-    add_product_to_cart, get_cart_items, delete_cart_item, create_customer_address, \
-    get_customer_address, get_entries
+    add_product_to_cart, get_cart_items, delete_cart_item, create_customer_address, get_entries
 from payment_tools import precheckout_callback, successful_payment_callback, start_without_shipping_callback
 
 logger = logging.getLogger('shop_tg_bot')
