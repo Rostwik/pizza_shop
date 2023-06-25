@@ -1,11 +1,13 @@
 import os
+from pprint import pprint
 
 import redis
 import requests
 from flask import Flask, request
 from dotenv import load_dotenv
 
-from moltin import get_moltin_token, get_product_image, get_categories, get_products_by_category_id
+from moltin import get_moltin_token, get_product_image, get_categories, get_products_by_category_id, \
+    add_product_to_cart, get_cart_items
 
 app = Flask(__name__)
 load_dotenv()
@@ -14,6 +16,7 @@ FACEBOOK_TOKEN = os.getenv('FACEBOOK_TOKEN')
 client_id = os.getenv('MOLTIN_CLIENT_KEY')
 client_secret = os.getenv('SECRET_KEY')
 main_shop_img = os.getenv('MAIN_IMG')
+cart_img = os.getenv('CART_IMG')
 categories_pizzas_img = os.getenv('OTHERS_PIZZAS_IMG')
 
 
@@ -30,9 +33,6 @@ def get_database_connection():
 
 @app.route('/', methods=['GET'])
 def verify():
-    """
-    При верификации вебхука у Facebook он отправит запрос на этот адрес. На него нужно ответить VERIFY_TOKEN.
-    """
     if request.args.get("hub.mode") == "subscribe" and request.args.get("hub.challenge"):
         if not request.args.get("hub.verify_token") == os.environ["VERIFY_TOKEN"]:
             return "Verification token mismatch", 403
@@ -41,15 +41,71 @@ def verify():
     return "Hello world!!", 200
 
 
-def handle_start(sender_id, message_text):
+def handle_start(sender_id, message_text, db, user_id):
     send_menu(sender_id, message_text)
 
-    return "START"
+    return 'MENU'
+
+
+def handle_menu(sender_id, message_text, db, user_id):
+    moltin_access_token = get_moltin_token(client_id, client_secret)
+
+    if 'add_into_cart' in message_text:
+        _, product_id = message_text.split()
+        add_product_to_cart(moltin_access_token, product_id, 1, user_id)
+        message = {
+            "text": f'Пицца добавлена в корзину'
+        }
+        send_message(sender_id, message)
+
+    if 'cart' in message_text:
+        cart, products_sum = get_cart_items(moltin_access_token, user_id)
+        pprint(cart)
+        menu_items = [
+            {'title': f"Заказ на сумму {products_sum}",
+             'image_url': cart_img,
+             'buttons': [{'type': 'postback', 'title': 'Самовывоз',
+                          'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
+                         {'type': 'postback', 'title': 'Доставка',
+                          'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
+                         {'type': 'postback', 'title': 'Меню',
+                          'payload': 'menu'}
+                         ]
+             }
+        ]
+        for item in cart:
+            menu_items.append(
+                {'title': f"{item['name']}",
+                 'image_url': item['image']['href'],
+                 'subtitle': item["description"],
+                 'buttons': [{'type': 'postback', 'title': 'Убрать из корзины',
+                              'payload': f'delete {item["id"]}'}]
+                 }
+            )
+
+        message = {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type": "generic",
+                    "elements": menu_items
+
+                }
+            }
+        }
+
+        send_message(sender_id, message)
+
+    if 'delete' in message_text:
+        pass
+
+    return 'MENU'
 
 
 def handle_users_reply(sender_id, message_text):
     states_functions = {
         'START': handle_start,
+        'MENU': handle_menu,
     }
 
     db = get_database_connection()
@@ -65,7 +121,7 @@ def handle_users_reply(sender_id, message_text):
         user_state = "START"
 
     state_handler = states_functions[user_state]
-    next_state = state_handler(sender_id, message_text)
+    next_state = state_handler(sender_id, message_text, db, user_id)
     db.set(user_id, next_state)
 
 
@@ -86,12 +142,12 @@ def webhook():
     return "ok", 200
 
 
-def send_message(recipient_id, message):
+def send_message(sender_id, message):
     params = {"access_token": FACEBOOK_TOKEN}
     headers = {"Content-Type": "application/json"}
     request_content = {
         "recipient": {
-            "id": recipient_id
+            "id": sender_id
         },
         "message": message
     }
@@ -102,7 +158,7 @@ def send_message(recipient_id, message):
     response.raise_for_status()
 
 
-def send_menu(recipient_id, message_text):
+def send_menu(sender_id, message_text):
     moltin_token = get_moltin_token(client_id, client_secret)
     categories = get_categories(moltin_token)
     if 'category' in message_text:
@@ -115,7 +171,7 @@ def send_menu(recipient_id, message_text):
          'subtitle': "На любой вкус!",
          'image_url': main_shop_img,
          'buttons': [{'type': 'postback', 'title': 'Корзина',
-                      'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
+                      'payload': 'cart'},
                      {'type': 'postback', 'title': 'Акции',
                       'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
                      {'type': 'postback', 'title': 'Сделать заказ',
@@ -130,7 +186,7 @@ def send_menu(recipient_id, message_text):
              'image_url': get_product_image(moltin_token, product['id']),
              'subtitle': product['attributes']['description'],
              'buttons': [{'type': 'postback', 'title': 'Добавить в корзину',
-                          'payload': 'DEVELOPER_DEFINED_PAYLOAD'}]
+                          'payload': f'add_into_cart {product["id"]}'}]
              }
         )
 
@@ -160,7 +216,7 @@ def send_menu(recipient_id, message_text):
             }
         }
     }
-    send_message(recipient_id, message)
+    send_message(sender_id, message)
 
 
 if __name__ == '__main__':
