@@ -1,13 +1,12 @@
+import json
 import os
-from pprint import pprint
 
 import redis
 import requests
 from flask import Flask, request
 from dotenv import load_dotenv
 
-from moltin import get_moltin_token, get_product_image, get_categories, get_products_by_category_id, \
-    add_product_to_cart, get_cart_items, delete_cart_item
+from moltin import get_moltin_token, get_product_image, add_product_to_cart, get_cart_items, delete_cart_item
 
 app = Flask(__name__)
 load_dotenv()
@@ -42,7 +41,7 @@ def verify():
 
 
 def handle_start(sender_id, message_text, db, user_id):
-    send_menu(sender_id, message_text)
+    send_menu(sender_id, message_text, db)
 
     return 'MENU'
 
@@ -65,6 +64,9 @@ def handle_menu(sender_id, message_text, db, user_id):
         _, cart_product_id = message_text.split()
         delete_cart_item(moltin_access_token, user_id, cart_product_id)
         get_cart_menu(moltin_access_token, sender_id, user_id)
+
+    if message_text == 'menu' or 'category' in message_text:
+        send_menu(sender_id, message_text, db)
 
     return 'MENU'
 
@@ -162,14 +164,15 @@ def send_message(sender_id, message):
     response.raise_for_status()
 
 
-def send_menu(sender_id, message_text):
+def send_menu(sender_id, message_text, db):
     moltin_token = get_moltin_token(client_id, client_secret)
-    categories = get_categories(moltin_token)
+    categories = json.loads(db.get('categories'))
+    products = json.loads(db.get('products'))
     if 'category' in message_text:
         _, category_name = message_text.split()
-        products = get_products_by_category_id(moltin_token, categories[category_name])
+        products_by_category = products[category_name]
     else:
-        products = get_products_by_category_id(moltin_token, categories['front_main'])
+        products_by_category = products['front_main']
     menu_items = [
         {'title': "Меню",
          'subtitle': "На любой вкус!",
@@ -183,7 +186,7 @@ def send_menu(sender_id, message_text):
                      ]
          }
     ]
-    for product in products:
+    for product in products_by_category:
         price = product['attributes']['price']['RUB']['amount']
         menu_items.append(
             {'title': f"{product['attributes']['name']} {price}р.",
