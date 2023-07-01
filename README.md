@@ -31,7 +31,18 @@ To work with the shop_telegram_bot.py application:
   - YANDEX_API - geolocation detection tools are implemented based on Yandex services [You can connect it here](https://developer.tech.yandex.ru/services)
   - TRANZZO_TOKEN - payment system token (of your choice)
   - SECRET_WORD - any value that will allow you to determine that the payment was received from this application
-  
+
+To work with the app.py application (facebook_bot):
+- create the file .env and fill in this data:
+
+  - SECRET_KEY - to get your application keys, see [Your first API request](https://elasticpath.dev/docs/authentication/application-keys/application-keys-cm)
+  - MOLTIN_CLIENT_KEY - to get this token, you need to register in CMS and follow [instruction](https://elasticpath.dev/docs/api-overview/your-first-api-request) using SECRET_KEY
+  - REDIS_BD_CREDENTIALS - a string for connecting to the database, kind of redis://login:password@host:port
+  - FACEBOOK_TOKEN - to get a token, you must have a facebook account, created page and facebook developer cabinet [tip](https://dvmn.org/encyclopedia/api-docs/how-to-get-facebook-api/)
+  - VERIFY_TOKEN - an arbitrary number, it must be filled in in the settings of the facebook developer cabinet [tip](https://dvmn.org/encyclopedia/api-docs/how-to-get-facebook-api/)
+  - MAIN_IMG - link to the image that will be displayed in the main menu
+  - OTHERS_PIZZAS_IMG - link to the image that will be displayed for the menu of other pizzas
+  - CART_IMG link to an image of a basket or cart
 ## Installing
 
 To get started go to terminal(mac os) or CMD (Windows)
@@ -50,14 +61,14 @@ $pip install -r requirements.txt
 ```
 - run the program 
 ```bash
-$python tg_pizza_bot.py
+$python app.py
 ```
 
 ## Examples
 
 You can see working chatbots here:
 
-- [tg_bot](https://t.me/Space_photography_bot)
+- [facebook_page](https://www.facebook.com/profile.php?id=100071479164563)
 
 ## License
 
