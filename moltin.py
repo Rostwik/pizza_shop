@@ -25,10 +25,10 @@ def get_categories(moltin_access_token):
     response = requests.get(f'https://api.moltin.com/pcm/catalogs/{catalog_id}/releases/latest/nodes', headers=headers)
     response.raise_for_status()
 
-    response = response.json()['data']
+    raw_categories = response.json()['data']
 
     categories = {}
-    for category in response:
+    for category in raw_categories:
         categories[category['attributes']['description']] = category['id']
 
     return categories

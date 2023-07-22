@@ -59,9 +59,14 @@ $git clone https://github.com/Rostwik/pizza_shop.git
 ```bash
 $pip install -r requirements.txt
 ```
-- run the program 
+- run the program for facebook
 ```bash
 $python app.py
+```
+
+- run the program for telegram
+```bash
+$python tg_pizza.py
 ```
 
 ## Examples

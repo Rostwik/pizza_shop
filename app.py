@@ -1,33 +1,23 @@
-import json
 import os
 
-import redis
+import json
+
 import requests
 from flask import Flask, request
 from dotenv import load_dotenv
 
+from database_tools import get_database_connection
 from moltin import get_moltin_token, get_product_image, add_product_to_cart, get_cart_items, delete_cart_item
 
 app = Flask(__name__)
 load_dotenv()
-_database = None
+
 FACEBOOK_TOKEN = os.getenv('FACEBOOK_TOKEN')
-client_id = os.getenv('MOLTIN_CLIENT_KEY')
-client_secret = os.getenv('SECRET_KEY')
-main_shop_img = os.getenv('MAIN_IMG')
-cart_img = os.getenv('CART_IMG')
-categories_pizzas_img = os.getenv('OTHERS_PIZZAS_IMG')
-
-
-def get_database_connection():
-    global _database
-
-    if _database is None:
-        redis_bd_credentials = os.getenv('REDIS_BD_CREDENTIALS')
-        _database = redis.from_url(redis_bd_credentials)
-        _database.ping()
-
-    return _database
+CLIENT_ID = os.getenv('MOLTIN_CLIENT_KEY')
+CLIENT_SECRET = os.getenv('SECRET_KEY')
+MAIN_SHOP_IMG = os.getenv('MAIN_IMG')
+CART_IMG = os.getenv('CART_IMG')
+CATEGORIES_PIZZAS_IMG = os.getenv('OTHERS_PIZZAS_IMG')
 
 
 @app.route('/', methods=['GET'])
@@ -47,7 +37,7 @@ def handle_start(sender_id, message_text, db, user_id):
 
 
 def handle_menu(sender_id, message_text, db, user_id):
-    moltin_access_token = get_moltin_token(client_id, client_secret)
+    moltin_access_token = get_moltin_token(CLIENT_ID, CLIENT_SECRET)
 
     if 'add_into_cart' in message_text:
         _, product_id = message_text.split()
@@ -75,7 +65,7 @@ def get_cart_menu(moltin_access_token, sender_id, user_id):
     cart, products_sum = get_cart_items(moltin_access_token, user_id)
     menu_items = [
         {'title': f"Заказ на сумму {products_sum}",
-         'image_url': cart_img,
+         'image_url': CART_IMG,
          'buttons': [{'type': 'postback', 'title': 'Самовывоз',
                       'payload': 'DEVELOPER_DEFINED_PAYLOAD'},
                      {'type': 'postback', 'title': 'Доставка',
@@ -165,7 +155,7 @@ def send_message(sender_id, message):
 
 
 def send_menu(sender_id, message_text, db):
-    moltin_token = get_moltin_token(client_id, client_secret)
+    moltin_token = get_moltin_token(CLIENT_ID, CLIENT_SECRET)
     categories = json.loads(db.get('categories'))
     products = json.loads(db.get('products'))
     if 'category' in message_text:
@@ -176,7 +166,7 @@ def send_menu(sender_id, message_text, db):
     menu_items = [
         {'title': "Меню",
          'subtitle': "На любой вкус!",
-         'image_url': main_shop_img,
+         'image_url': MAIN_SHOP_IMG,
          'buttons': [{'type': 'postback', 'title': 'Корзина',
                       'payload': 'cart'},
                      {'type': 'postback', 'title': 'Акции',
@@ -207,7 +197,7 @@ def send_menu(sender_id, message_text, db):
 
     menu_items.append(
         {'title': "Не нашли нужную пиццу?",
-         'image_url': categories_pizzas_img,
+         'image_url': CATEGORIES_PIZZAS_IMG,
          'subtitle': 'Остальные пиццы можно посмотреть в категориях ниже.',
          'buttons': buttons
          }

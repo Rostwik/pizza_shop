@@ -10,6 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Filters, Updater, PreCheckoutQueryHandler
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
+from database_tools import get_database_connection
 from geolocation_tools import fetch_coordinates, get_nearest_pizzeria
 from logger_handler import TelegramLogsHandler
 from dotenv import load_dotenv
@@ -19,8 +20,6 @@ from moltin import get_moltin_token, get_products, get_product, get_price, get_p
 from payment_tools import precheckout_callback, successful_payment_callback, start_without_shipping_callback
 
 logger = logging.getLogger('shop_tg_bot')
-
-_database = None
 
 
 def send_customer_reminder(bot, job):
@@ -476,17 +475,6 @@ def handle_users_reply(
 
     next_state = state_handler(bot, update)
     db.set(chat_id, next_state)
-
-
-def get_database_connection():
-    global _database
-
-    if _database is None:
-        redis_bd_credentials = os.getenv('REDIS_BD_CREDENTIALS')
-        _database = redis.from_url(redis_bd_credentials)
-        _database.ping()
-
-    return _database
 
 
 if __name__ == '__main__':
