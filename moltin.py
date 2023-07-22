@@ -5,6 +5,35 @@ import requests
 token_lifetime, access_token = None, None
 
 
+def get_products_by_category_id(moltin_access_token, category_id):
+    headers = {
+        'Authorization': f'Bearer {moltin_access_token}',
+    }
+    catalog_id = '1b17038c-bb1d-40f9-850e-f01c77b2a9e1'
+    url = f'https://api.moltin.com/pcm/catalogs/{catalog_id}/releases/latest/nodes/{category_id}/relationships/products'
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    return response.json()['data']
+
+
+def get_categories(moltin_access_token):
+    headers = {
+        'Authorization': f'Bearer {moltin_access_token}',
+    }
+    catalog_id = '1b17038c-bb1d-40f9-850e-f01c77b2a9e1'
+    response = requests.get(f'https://api.moltin.com/pcm/catalogs/{catalog_id}/releases/latest/nodes', headers=headers)
+    response.raise_for_status()
+
+    raw_categories = response.json()['data']
+
+    categories = {}
+    for category in raw_categories:
+        categories[category['attributes']['description']] = category['id']
+
+    return categories
+
+
 def get_entries(moltin_access_token, flow):
     headers = {
         'Authorization': f'Bearer {moltin_access_token}',
@@ -112,6 +141,7 @@ def create_flow(moltin_access_token):
         }
         requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
+
 
 def create_product(moltin_access_token, img_link, sku, name, description):
     url = 'https://api.moltin.com/pcm/products'
